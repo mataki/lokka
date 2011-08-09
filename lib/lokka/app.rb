@@ -107,11 +107,7 @@ module Lokka
       @post.user = current_user
       if @post.save
         flash[:notice] = t.post_was_successfully_created
-        if @post.draft
-          redirect '/admin/posts?draft=true'
-        else
-          redirect '/admin/posts'
-        end
+        redirect "/admin/posts/#{@post.id}/edit"
       else
         @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, t.not_select])
         render_any :'posts/new'
@@ -128,11 +124,7 @@ module Lokka
       @post = Post.get(id)
       if @post.update(params['post'])
         flash[:notice] = t.post_was_successfully_updated
-        if @post.draft
-          redirect '/admin/posts?draft=true'
-        else
-          redirect '/admin/posts'
-        end
+        redirect "/admin/posts/#{@post.id}/edit"
       else
         @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, t.not_select])
         render_any :'posts/edit'
@@ -170,32 +162,24 @@ module Lokka
       @page.user = current_user
       if @page.save
         flash[:notice] = t.page_was_successfully_created
-        if @page.draft
-          redirect '/admin/pages?draft=true'
-        else
-          redirect '/admin/pages'
-        end
+        redirect "/admin/pages/#{@page.id}/edit"
       else
         @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, t.not_select])
         render_any :'pages/new'
       end
     end
-    
+
     get '/admin/pages/:id/edit' do |id|
       @page = Page.get(id)
       @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, t.not_select])
       render_any :'pages/edit'
     end
-    
+
     put '/admin/pages/:id' do |id|
       @page = Page.get(id)
       if @page.update(params['page'])
         flash[:notice] = t.page_was_successfully_updated
-        if @page.draft
-          redirect '/admin/pages?draft=true'
-        else
-          redirect '/admin/pages'
-        end
+        redirect "/admin/pages/#{@page.id}/edit"
       else
         @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, t.not_select])
         render_any :'pages/edit'
@@ -236,13 +220,13 @@ module Lokka
         render_any :'comments/new'
       end
     end
-    
+
     get '/admin/comments/:id/edit' do |id|
       @comment = Comment.get(id)
       @entries = Entry.all.map {|e| [e.id, e.title] }.unshift([nil, t.not_select])
       render_any :'comments/edit'
     end
-    
+
     put '/admin/comments/:id' do |id|
       @comment = Comment.get(id)
       if @comment.update(params['comment'])
@@ -266,13 +250,13 @@ module Lokka
                     page(params[:page], :per_page => settings.admin_per_page)
       render_any :'categories/index'
     end
-    
+
     get '/admin/categories/new' do
       @category = Category.new
       @categories = [nil, t.not_select] + Category.all.map {|c| [c.id, c.title] }
       render_any :'categories/new'
     end
-    
+
     post '/admin/categories' do
       @category = Category.new(params['category'])
       #@category.user = current_user
@@ -283,12 +267,12 @@ module Lokka
         render_any :'categories/new'
       end
     end
-    
+
     get '/admin/categories/:id/edit' do |id|
       @category = Category.get(id)
       render_any :'categories/edit'
     end
-    
+
     put '/admin/categories/:id' do |id|
       @category = Category.get(id)
       if @category.update(params['category'])
@@ -339,12 +323,12 @@ module Lokka
                     page(params[:page], :per_page => settings.admin_per_page)
       render_any :'users/index'
     end
-    
+
     get '/admin/users/new' do
       @user = User.new
       render_any :'users/new'
     end
-    
+
     post '/admin/users' do
       @user = User.new(params['user'])
       if @user.save
@@ -354,12 +338,12 @@ module Lokka
         render_any :'users/new'
       end
     end
-    
+
     get '/admin/users/:id/edit' do |id|
       @user = User.get(id)
       render_any :'users/edit'
     end
-    
+
     put '/admin/users/:id' do |id|
       @user = User.get(id)
       if @user.update(params['user'])
@@ -425,7 +409,7 @@ module Lokka
       flash[:notice] = t.snippet_was_successfully_deleted
       redirect '/admin/snippets'
     end
- 
+
     # theme
     get '/admin/themes' do
       @themes =
