@@ -22,6 +22,7 @@ gem 'slim', '0.9.2'
 gem 'rake', '0.8.7'
 gem 'erubis', '2.6.6'
 gem 'activesupport', '3.0.7'
+gem "heroku_backup_task", :git => "git@github.com:mataki/heroku_backup_task.git"
 
 Dir["public/plugin/lokka-*/Gemfile"].each {|path| eval(open(path) {|f| f.read }) }
 

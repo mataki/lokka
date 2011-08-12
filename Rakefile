@@ -1,4 +1,5 @@
 require './init'
+require "heroku_backup_task/tasks"
 
 desc 'Prepare test'
 task 'test:prepare' => 'db:migrate' do
@@ -47,3 +48,5 @@ begin
   end
 rescue LoadError => e
 end
+
+task :cron => :heroku_backup_and_store_s3
