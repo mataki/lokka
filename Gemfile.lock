@@ -6,7 +6,7 @@ GIT
       dm-core (~> 1.1.0)
 
 GIT
-  remote: git@github.com:mataki/heroku_backup_task.git
+  remote: git://github.com/mataki/heroku_backup_task.git
   revision: c7101f1b66fae0b4aadf5cc1c8bb64723589d689
   specs:
     heroku_backup_task (0.0.5.1)
