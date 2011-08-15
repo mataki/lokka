@@ -1,3 +1,4 @@
+# encoding: utf-8
 class Bread
   attr_accessor :name, :link, :last
 
@@ -8,6 +9,6 @@ class Bread
   end
 
   def last?
-    @last
+    !!@last
   end
 end

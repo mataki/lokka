@@ -1,6 +1,8 @@
 require './init'
 require "heroku_backup_task/tasks"
 
+task :default => [:spec]
+
 desc 'Prepare test'
 task 'test:prepare' => 'db:migrate' do
   Lokka::Database.new.connect.seed
