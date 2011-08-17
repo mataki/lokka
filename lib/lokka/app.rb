@@ -470,6 +470,23 @@ module Lokka
       end
     end
 
+    # import
+    get '/admin/import' do
+      render_any :import
+    end
+
+    post '/admin/import' do
+      file = params['import']['file'][:tempfile]
+
+      if file
+        Lokka::Importer::WordPress.new(file).import
+        flash[:notice] = t.data_was_successfully_imported
+        redirect '/admin/import'
+      else
+        render_any :import
+      end
+    end
+
     # index
     get '/' do
       @theme_types << :index

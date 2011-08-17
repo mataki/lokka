@@ -169,6 +169,7 @@ DEPENDENCIES
   haml (= 3.1.1)
   heroku_backup_task!
   i18n (= 0.5.0)
+  nokogiri
   rack-flash (= 0.1.1)
   rack-test (= 0.6.0)
   rake (= 0.8.7)
