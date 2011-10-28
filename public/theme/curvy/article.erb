@@ -13,12 +13,16 @@
 	</div>
 	<div class="entry_info">
 		<span class="link_to_entry_comment">
-			<%= link_to "#{t.comments}(#{post.comments.size})", "#{post.link}#comment_wrapper" %>
+			<%= link_to "#{rt.comments}(#{post.comments.size})", "#{post.link}#comment_wrapper" %>
 		</span>
 
 		<span class="entry_date">
-			<%= post.updated_at.strftime("%Y/%m/%d %H:%M:%S") %>
+			<%= post.created_at.strftime("%Y/%m/%d %H:%M:%S") %>
 		</span>
+
+		<% if logged_in? %>
+		  <span><a href="<%= post.edit_link %>"><%= rt.edit %></a></span>
+		<% end %>
 
 		<%= post.tags_to_html %>
 	</div>

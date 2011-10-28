@@ -35,9 +35,9 @@ module Lokka
     end
 
     def bread_crumb
-      @bread_crumbs.breads[0..-2].inject('<ol>') do |html,bread|
-        html += "<li><a href=\"#{bread.link}\">#{bread.name}</a></li>"
-      end + "<li>#{@bread_crumbs.breads[-1].name}</li></ol>"
+      @bread_crumbs[0..-2].inject('<ol>') do |html,bread|
+        html += "<li><a href=\"#{bread[:link]}\">#{bread[:name]}</a></li>"
+      end + "<li>#{@bread_crumbs[-1][:name]}</li></ol>"
     end
 
     def category_tree(categories = Category.roots)
@@ -55,9 +55,13 @@ module Lokka
     end
 
     def render_detect(*names)
+      render_detect_with_options(names)
+    end
+
+    def render_detect_with_options(names, options = {})
       ret = ''
       names.each do |name|
-        out = render_any(name)
+        out = render_any(name, options)
         unless out.blank?
           ret = out
           break
@@ -70,6 +74,7 @@ module Lokka
         ret
       end
     end
+
 
     def partial(name, options = {})
       options[:layout] = false
@@ -93,7 +98,7 @@ module Lokka
     def rendering(ext, name, options = {})
       locals = options[:locals] ? {:locals => options[:locals]} : {}
       dir =
-        if request.path_info =~ %r{^/admin/.*}
+        if request.path_info =~ %r{^/admin/.*} && !options[:theme]
           'admin'
         else
           "theme/#{@theme.name}"
@@ -175,6 +180,17 @@ module Lokka
       html + '</select>'
     end
 
+    def checkbox(object, method, options = {})
+      name = "#{object.class.name.downcase}[#{method}]"
+      id = "#{object.class.name.downcase}_#{method}"
+      checked = object.send(method) ? ' checked="checked"' : ''
+      attrs = ''
+      options.each do |key, value|
+        attrs += %Q( #{key}="#{value}")
+      end
+      %Q(<input type="hidden" name="#{name}" value="false" /><input type="checkbox" id="#{id}" name="#{name}" value="true"#{attrs}#{checked} />)
+    end
+
     def truncate(text, options = {})
       options = {:length => 30, :omission => '...'}.merge(options)
       mb_text = text.mb_chars
@@ -223,5 +239,95 @@ module Lokka
     end
 
     def locale; r18n.locale.code end
+
+    def redirect_after_edit(entry)
+      name = entry.class.name.downcase.pluralize
+      if entry.draft
+        redirect "/admin/#{name}?draft=true"
+      else
+        redirect "/admin/#{name}"
+      end
+    end
+
+    def render_preview(entry)
+        @entry = entry
+        @entry.title << ' - Preview'
+        setup_and_render_entry
+    end
+
+    def setup_and_render_entry
+      @theme_types << :entry
+
+      type = @entry.class.name.downcase.to_sym
+      @theme_types << type
+      instance_variable_set("@#{type}", @entry)
+
+      @title = @entry.title
+
+      @bread_crumbs = [{:name => rt.home, :link => '/'}]
+      if @entry.category
+        @entry.category.ancestors.each do |cat|
+          @bread_crumbs << {:name => cat.name, :link => cat.link}
+        end
+        @bread_crumbs << {:name => @entry.category.title, :link => @entry.category.link}
+      end
+      @bread_crumbs << {:name => @entry.title, :link => @entry.link}
+
+      render_detect_with_options [type, :entry], :theme => true
+    end
+
+    def get_admin_entries(entry_class)
+      @name = entry_class.name.downcase
+      @entries = params[:draft] == 'true' ? entry_class.unpublished.all : entry_class.all
+      @entries = @entries.page(params[:page], :per_page => settings.admin_per_page)
+      render_any :'entries/index'
+    end
+
+    def get_admin_entry_new(entry_class)
+      @name = entry_class.name.downcase
+      @entry = entry_class.new(:created_at => DateTime.now)
+      @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, rt.not_select])
+      render_any :'entries/new'
+    end
+
+    def get_admin_entry_edit(entry_class, id)
+      @name = entry_class.name.downcase
+      @entry = entry_class.get(id)
+      @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, rt.not_select])
+      render_any :'entries/edit'
+    end
+
+    def post_admin_entry(entry_class)
+      @name = entry_class.name.downcase
+      @entry = entry_class.new(params[@name])
+      if params['preview']
+        render_preview @entry
+      else
+        @entry.user = current_user
+        if @entry.save
+          flash[:notice] = rt["#{@name}_was_successfully_created"]
+          redirect_after_edit(@entry)
+        else
+          @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, rt.not_select])
+          render_any :'entries/new'
+        end
+      end
+    end
+
+    def put_admin_entry(entry_class, id)
+      @name = entry_class.name.downcase
+      @entry = entry_class.get(id)
+      if params['preview']
+        render_preview entry_class.new(params[@name])
+      else
+        if @entry.update(params[@name])
+          flash[:notice] = rt["#{@name}_was_successfully_updated"]
+          redirect_after_edit(@entry)
+        else
+          @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, rt.not_select])
+          render_any :'entries/edit'
+        end
+      end
+    end
   end
 end

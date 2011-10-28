@@ -1,48 +1,28 @@
 # encoding: utf-8
+require 'lokka'
+
 module Lokka
   class App < Sinatra::Base
-    def self.load_plugin
-      names = []
-      Dir["public/plugin/lokka-*/lib/lokka/*.rb"].each do |path|
-        paths = path.split(File::SEPARATOR)
-        $:.push File.join(paths[0], paths[1], paths[2], paths[3])
-
-        i18n = File.join(paths[0], paths[1], paths[2], 'i18n')
-        R18n.extension_places << R18n::Loader::YAML.new(i18n) if File.exist? i18n
-
-        name, ext = paths[5].split('.')
-        require "lokka/#{name}"
-        begin
-          plugee = ::Lokka.const_get(name.camelize)
-          register plugee
-          names << name
-        rescue => e
-          puts "plugin #{paths[2]} is identified as a suspect."
-          puts e
-        end
-      end
-
-      plugins = []
-      unless @routes['GET'].blank?
-        matchers = @routes['GET'].map(&:first)
-        names.map do |name|
-          plugins << OpenStruct.new(
-            :name => name,
-            :have_admin_page => matchers.any? {|m| m =~ "/admin/plugins/#{name}" })
-        end
-      end
-      set :plugins, plugins
+    configure :development do
+      register Sinatra::Reloader
     end
 
     configure do
       enable :method_override, :raise_errors, :static, :sessions
       disable :logging
+      
       register Sinatra::R18n
+      alias_method :rt, :t
+      alias_method :rl, :l
+
+      register Padrino::Helpers
+
       register Lokka::Before
+      set :app_file, __FILE__
       set :root, File.expand_path('../../..', __FILE__)
-      set :public => Proc.new { File.join(root, 'public') }
-      set :views => Proc.new { public }
-      set :theme => Proc.new { File.join(public, 'theme') }
+      set :public_folder => Proc.new { File.join(root, 'public') }
+      set :views => Proc.new { public_folder }
+      set :theme => Proc.new { File.join(public_folder, 'theme') }
       set :supported_templates => %w(erb haml slim erubis)
       set :supported_stylesheet_templates => %w(scss sass)
       set :per_page, 10
@@ -52,12 +32,11 @@ module Lokka
       supported_stylesheet_templates.each do |style|
         set style, :style => :expanded
       end
-      helpers Sinatra::ContentFor
       helpers Lokka::Helpers
       use Rack::Session::Cookie,
         :expire_after => 60 * 60 * 24 * 12
       use Rack::Flash
-      load_plugin
+      register Lokka::Plugin::Loader
       Lokka::Database.new.connect
     end
 
@@ -73,7 +52,7 @@ module Lokka
       @user = User.authenticate(params[:name], params[:password])
       if @user
         session[:user] = @user.id
-        flash[:notice] = t.logged_in_successfully
+        flash[:notice] = rt.logged_in_successfully
         if session[:return_to]
           redirect_url = session[:return_to]
           session[:return_to] = false
@@ -94,60 +73,29 @@ module Lokka
 
     # posts
     get '/admin/posts' do
-      model = Post
-      model = model.all(:draft => true) if params[:draft] == 'true'
-      @posts = model.all(:order => :created_at.desc).
-                     page(params[:page], :per_page => settings.admin_per_page)
-      render_any :'posts/index'
+      get_admin_entries(Post)
     end
 
     get '/admin/posts/new' do
-      @post = Post.new(:created_at => DateTime.now)
-      @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, t.not_select])
-      render_any :'posts/new'
+      get_admin_entry_new(Post)
     end
 
     post '/admin/posts' do
-      @post = Post.new(params['post'])
-      @post.user = current_user
-      if @post.save
-        flash[:notice] = t.post_was_successfully_created
-        if @post.draft
-          redirect '/admin/posts?draft=true'
-        else
-          redirect '/admin/posts'
-        end
-      else
-        @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, t.not_select])
-        render_any :'posts/new'
-      end
+      post_admin_entry(Post)
     end
 
     get '/admin/posts/:id/edit' do |id|
-      @post = Post.get(id)
-      @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, t.not_select])
-      render_any :'posts/edit'
+      get_admin_entry_edit(Post, id)
     end
 
     put '/admin/posts/:id' do |id|
-      @post = Post.get(id)
-      if @post.update(params['post'])
-        flash[:notice] = t.post_was_successfully_updated
-        if @post.draft
-          redirect '/admin/posts?draft=true'
-        else
-          redirect '/admin/posts'
-        end
-      else
-        @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, t.not_select])
-        render_any :'posts/edit'
-      end
+      put_admin_entry(Post, id)
     end
 
     delete '/admin/posts/:id' do |id|
       post = Post.get(id)
       post.destroy
-      flash[:notice] = t.post_was_successfully_deleted
+      flash[:notice] = rt.post_was_successfully_deleted
       if post.draft
         redirect '/admin/posts?draft=true'
       else
@@ -157,60 +105,29 @@ module Lokka
 
     # pages
     get '/admin/pages' do
-      model = Page
-      model = model.all(:draft => true) if params[:draft] == 'true'
-      @pages = model.all(:order => :created_at.desc).
-                     page(params[:page], :per_page => settings.admin_per_page)
-      render_any :'pages/index'
+      get_admin_entries(Page)
     end
 
     get '/admin/pages/new' do
-      @page = Page.new(:created_at => DateTime.now)
-      @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, t.not_select])
-      render_any :'pages/new'
+      get_admin_entry_new(Page)
     end
 
     post '/admin/pages' do
-      @page = Page.new(params['page'])
-      @page.user = current_user
-      if @page.save
-        flash[:notice] = t.page_was_successfully_created
-        if @page.draft
-          redirect '/admin/pages?draft=true'
-        else
-          redirect '/admin/pages'
-        end
-      else
-        @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, t.not_select])
-        render_any :'pages/new'
-      end
+      post_admin_entry(Page)
     end
-    
+
     get '/admin/pages/:id/edit' do |id|
-      @page = Page.get(id)
-      @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, t.not_select])
-      render_any :'pages/edit'
+      get_admin_entry_edit(Page, id)
     end
-    
+
     put '/admin/pages/:id' do |id|
-      @page = Page.get(id)
-      if @page.update(params['page'])
-        flash[:notice] = t.page_was_successfully_updated
-        if @page.draft
-          redirect '/admin/pages?draft=true'
-        else
-          redirect '/admin/pages'
-        end
-      else
-        @categories = Category.all.map {|c| [c.id, c.title] }.unshift([nil, t.not_select])
-        render_any :'pages/edit'
-      end
+      put_admin_entry(Page, id)
     end
 
     delete '/admin/pages/:id' do |id|
       page = Page.get(id)
       page.destroy
-      flash[:notice] = t.page_was_successfully_deleted
+      flash[:notice] = rt.page_was_successfully_deleted
       if page.draft
         redirect '/admin/pages?draft=true'
       else
@@ -227,41 +144,41 @@ module Lokka
 
     get '/admin/comments/new' do
       @comment = Comment.new(:created_at => DateTime.now)
-      @entries = Entry.all.map {|e| [e.id, e.title] }.unshift([nil, t.not_select])
+      @entries = Entry.all.map {|e| [e.id, e.title] }.unshift([nil, rt.not_select])
       render_any :'comments/new'
     end
 
     post '/admin/comments' do
       @comment = Comment.new(params['comment'])
       if @comment.save
-        flash[:notice] = t.comment_was_successfully_created
+        flash[:notice] = rt.comment_was_successfully_created
         redirect '/admin/comments'
       else
-        @entries = Entry.all.map {|e| [e.id, e.title] }.unshift([nil, t.not_select])
+        @entries = Entry.all.map {|e| [e.id, e.title] }.unshift([nil, rt.not_select])
         render_any :'comments/new'
       end
     end
-    
+
     get '/admin/comments/:id/edit' do |id|
       @comment = Comment.get(id)
-      @entries = Entry.all.map {|e| [e.id, e.title] }.unshift([nil, t.not_select])
+      @entries = Entry.all.map {|e| [e.id, e.title] }.unshift([nil, rt.not_select])
       render_any :'comments/edit'
     end
-    
+
     put '/admin/comments/:id' do |id|
       @comment = Comment.get(id)
       if @comment.update(params['comment'])
-        flash[:notice] = t.comment_was_successfully_updated
+        flash[:notice] = rt.comment_was_successfully_updated
         redirect '/admin/comments'
       else
-        @entries = Entry.all.map {|e| [e.id, e.title] }.unshift([nil, t.not_select])
+        @entries = Entry.all.map {|e| [e.id, e.title] }.unshift([nil, rt.not_select])
         render_any :'comments/edit'
       end
     end
 
     delete '/admin/comments/:id' do |id|
       Comment.get(id).destroy
-      flash[:notice] = t.comment_was_successfully_deleted
+      flash[:notice] = rt.comment_was_successfully_deleted
       redirect '/admin/comments'
     end
 
@@ -271,33 +188,33 @@ module Lokka
                     page(params[:page], :per_page => settings.admin_per_page)
       render_any :'categories/index'
     end
-    
+
     get '/admin/categories/new' do
       @category = Category.new
-      @categories = [nil, t.not_select] + Category.all.map {|c| [c.id, c.title] }
+      @categories = [nil, rt.not_select] + Category.all.map {|c| [c.id, c.title] }
       render_any :'categories/new'
     end
-    
+
     post '/admin/categories' do
       @category = Category.new(params['category'])
       #@category.user = current_user
       if @category.save
-        flash[:notice] = t.category_was_successfully_created
+        flash[:notice] = rt.category_was_successfully_created
         redirect '/admin/categories'
       else
         render_any :'categories/new'
       end
     end
-    
+
     get '/admin/categories/:id/edit' do |id|
       @category = Category.get(id)
       render_any :'categories/edit'
     end
-    
+
     put '/admin/categories/:id' do |id|
       @category = Category.get(id)
       if @category.update(params['category'])
-        flash[:notice] = t.category_was_successfully_updated
+        flash[:notice] = rt.category_was_successfully_updated
         redirect '/admin/categories'
       else
         render_any :'categories/edit'
@@ -306,7 +223,7 @@ module Lokka
 
     delete '/admin/categories/:id' do |id|
       Category.get(id).destroy
-      flash[:notice] = t.category_was_successfully_deleted
+      flash[:notice] = rt.category_was_successfully_deleted
       redirect '/admin/categories'
     end
 
@@ -325,7 +242,7 @@ module Lokka
     put '/admin/tags/:id' do |id|
       @tag = Tag.get(id)
       if @tag.update(params['tag'])
-        flash[:notice] = t.tag_was_successfully_updated
+        flash[:notice] = rt.tag_was_successfully_updated
         redirect '/admin/tags'
       else
         render_any :'tags/edit'
@@ -334,7 +251,7 @@ module Lokka
 
     delete '/admin/tags/:id' do |id|
       Tag.get(id).destroy
-      flash[:notice] = t.tag_was_successfully_deleted
+      flash[:notice] = rt.tag_was_successfully_deleted
       redirect '/admin/tags'
     end
 
@@ -344,31 +261,31 @@ module Lokka
                     page(params[:page], :per_page => settings.admin_per_page)
       render_any :'users/index'
     end
-    
+
     get '/admin/users/new' do
       @user = User.new
       render_any :'users/new'
     end
-    
+
     post '/admin/users' do
       @user = User.new(params['user'])
       if @user.save
-        flash[:notice] = t.user_was_successfully_created
+        flash[:notice] = rt.user_was_successfully_created
         redirect '/admin/users'
       else
         render_any :'users/new'
       end
     end
-    
+
     get '/admin/users/:id/edit' do |id|
       @user = User.get(id)
       render_any :'users/edit'
     end
-    
+
     put '/admin/users/:id' do |id|
       @user = User.get(id)
       if @user.update(params['user'])
-        flash[:notice] = t.user_was_successfully_updated
+        flash[:notice] = rt.user_was_successfully_updated
         redirect '/admin/users'
       else
         render_any :'users/edit'
@@ -382,7 +299,7 @@ module Lokka
       else
         target_user.destroy
       end
-      flash[:notice] = t.user_was_successfully_deleted
+      flash[:notice] = rt.user_was_successfully_deleted
       redirect '/admin/users'
     end
 
@@ -403,7 +320,7 @@ module Lokka
     post '/admin/snippets' do
       @snippet = Snippet.new(params['snippet'])
       if @snippet.save
-        flash[:notice] = t.snippet_was_successfully_created
+        flash[:notice] = rt.snippet_was_successfully_created
         redirect '/admin/snippets'
       else
         render_any :'snippets/new'
@@ -418,7 +335,7 @@ module Lokka
     put '/admin/snippets/:id' do |id|
       @snippet = Snippet.get(id)
       if @snippet.update(params['snippet'])
-        flash[:notice] = t.snippet_was_successfully_updated
+        flash[:notice] = rt.snippet_was_successfully_updated
         redirect '/admin/snippets'
       else
         render_any :'snippets/edit'
@@ -427,14 +344,14 @@ module Lokka
 
     delete '/admin/snippets/:id' do |id|
       Snippet.get(id).destroy
-      flash[:notice] = t.snippet_was_successfully_deleted
+      flash[:notice] = rt.snippet_was_successfully_deleted
       redirect '/admin/snippets'
     end
  
     # theme
     get '/admin/themes' do
       @themes =
-        Dir.glob("#{settings.theme}/*").map do |f|
+        (Dir.glob("#{settings.theme}/*") - Dir.glob("#{settings.theme}/*[-_]mobile")).map do |f|
           title = f.split('/').last
           s = Dir.glob("#{f}/screenshot.*")
           screenshot = s.empty? ? nil : "/#{s.first.split('/')[-3, 3].join('/')}"
@@ -446,8 +363,27 @@ module Lokka
     put '/admin/themes' do
       site = Site.first
       site.update(:theme => params[:title])
-      flash[:notice] = t.theme_was_successfully_updated
+      flash[:notice] = rt.theme_was_successfully_updated
       redirect '/admin/themes'
+    end
+
+    # mobile_theme
+    get '/admin/mobile_themes' do
+      @themes =
+        Dir.glob("#{settings.theme}/*[-_]mobile").map do |f|
+          title = f.split('/').last
+          s = Dir.glob("#{f}/screenshot.*")
+          screenshot = s.empty? ? nil : "/#{s.first.split('/')[-3, 3].join('/')}"
+          OpenStruct.new(:title => title, :screenshot => screenshot)
+        end
+      render_any :'mobile_themes/index'
+    end
+
+    put '/admin/mobile_themes' do
+      site = Site.first
+      site.update(:mobile_theme => params[:title])
+      flash[:notice] = rt.theme_was_successfully_updated
+      redirect '/admin/mobile_themes'
     end
 
     # plugin
@@ -463,7 +399,7 @@ module Lokka
 
     put '/admin/site' do
       if Site.first.update(params['site'])
-        flash[:notice] = t.site_was_successfully_updated
+        flash[:notice] = rt.site_was_successfully_updated
         redirect '/admin/site/edit'
       else
         render_any :'site/edit'
@@ -480,7 +416,7 @@ module Lokka
 
       if file
         Lokka::Importer::WordPress.new(file).import
-        flash[:notice] = t.data_was_successfully_imported
+        flash[:notice] = rt.data_was_successfully_imported
         redirect '/admin/import'
       else
         render_any :import
@@ -493,17 +429,18 @@ module Lokka
       @theme_types << :entries
 
       @posts = Post.published.
-                    page(params[:page], :per_page => settings.per_page)
+                    page(params[:page], :per_page => settings.per_page, :order => :created_at.desc)
 
-      @bread_crumbs = BreadCrumb.new
-      @bread_crumbs.add(t.home, '/')
+      @title = @site.title
+
+      @bread_crumbs = [{:name => rt.home, :link => '/'}]
 
       render_detect :index, :entries
     end
 
     get '/index.atom' do
       @posts = Post.published.
-                    page(params[:page], :per_page => settings.per_page)
+                    page(params[:page], :per_page => settings.per_page, :order => :created_at.desc)
       content_type 'application/atom+xml', :charset => 'utf-8'
       builder :'system/index'
     end
@@ -515,13 +452,12 @@ module Lokka
 
       @query = params[:query]
       @posts = Post.published.search(@query).
-                    page(params[:page], :per_page => settings.per_page)
+                    page(params[:page], :per_page => settings.per_page, :order => :created_at.desc)
 
-      @title = "Search by #{@query} - #{@site.title}"
+      @title = "Search by #{@query}"
 
-      @bread_crumbs = BreadCrumb.new
-      @bread_crumbs.add(t.home, '/')
-      @bread_crumbs.add(@query)
+      @bread_crumbs = [{:name => rt.home, :link => '/'},
+                       {:name => @query }]
 
       render_detect :search, :entries
     end
@@ -535,16 +471,15 @@ module Lokka
       @category = Category.get_by_fuzzy_slug(category_title)
       return 404 if @category.nil?
       @posts = Post.all(:category => @category).published.
-                    page(params[:page], :per_page => settings.per_page)
+                    page(params[:page], :per_page => settings.per_page, :order => :created_at.desc)
 
-      @title = "#{@category.title} - #{@site.title}"
+      @title = @category.title
 
-      @bread_crumbs = BreadCrumb.new
-      @bread_crumbs.add(t.home, '/')
+      @bread_crumbs = [{:name => rt.home, :link => '/'}]
       @category.ancestors.each do |cat|
-        @bread_crumbs.add(cat.name, cat.link)
+        @bread_crumbs << {:name => cat.name, :link => cat.link}
       end
-      @bread_crumbs.add(@category.title, @category.link)
+      @bread_crumbs << {:name => @category.title, :link => @category.link}
 
       render_detect :category, :entries
     end
@@ -558,12 +493,11 @@ module Lokka
       return 404 if @tag.nil?
       @posts = Post.all(:id => @tag.taggings.map {|o| o.taggable_id }).
                     published.
-                    page(params[:page], :per_page => settings.per_page)
-      @title = "#{@tag.name} - #{@site.title}"
+                    page(params[:page], :per_page => settings.per_page, :order => :created_at.desc)
+      @title = @tag.name
 
-      @bread_crumbs = BreadCrumb.new
-      @bread_crumbs.add(t.home, '/')
-      @bread_crumbs.add(@tag.name, @tag.link)
+      @bread_crumbs = [{:name => rt.home, :link => '/'},
+                       {:name => @tag.name, :link => @tag.link}]
 
       render_detect :tag, :entries
     end
@@ -577,14 +511,13 @@ module Lokka
       @posts = Post.all(:created_at.gte => DateTime.new(year, month)).
                     all(:created_at.lt => DateTime.new(year, month) >> 1).
                     published.
-                    page(params[:page], :per_page => settings.per_page)
+                    page(params[:page], :per_page => settings.per_page, :order => :created_at.desc)
 
-      @title = "#{year}/#{month} - #{@site.title}"
+      @title = "#{year}/#{month}"
 
-      @bread_crumbs = BreadCrumb.new
-      @bread_crumbs.add(t.home, '/')
-      @bread_crumbs.add("#{year}", "/#{year}/")
-      @bread_crumbs.add("#{year}/#{month}", "/#{year}/#{month}/")
+      @bread_crumbs = [{:name => rt.home, :link => '/'},
+                       {:name => "#{year}", :link => "/#{year}/"},
+                       {:name => "#{year}/#{month}", :link => "/#{year}/#{month}/"}]
 
       render_detect :monthly, :entries
     end
@@ -598,45 +531,26 @@ module Lokka
       @posts = Post.all(:created_at.gte => DateTime.new(year)).
                     all(:created_at.lt => DateTime.new(year + 1)).
                     published.
-                    page(params[:page], :per_page => settings.per_page)
+                    page(params[:page], :per_page => settings.per_page, :order => :created_at.desc)
 
-      @title = "#{year} - #{@site.title}"
+      @title = year
 
-      @bread_crumbs = BreadCrumb.new
-      @bread_crumbs.add(t.home, '/')
-      @bread_crumbs.add("#{year}", "/#{year}/")
+      @bread_crumbs = [{:name => rt.home, :link => '/'},
+                       {:name => "#{year}", :link => "/#{year}/"}]
 
       render_detect :yearly, :entries
     end
 
     # entry
-    get %r{^/([0-9a-zA-Z-]+)$} do |id_or_slug|
-      @theme_types << :entry
-
+    get %r{^/([_/0-9a-zA-Z-]+)$} do |id_or_slug|
       @entry = Entry.get_by_fuzzy_slug(id_or_slug)
       return 404 if @entry.blank?
-
-      type = @entry.class.name.downcase.to_sym
-      @theme_types << type
-      eval "@#{type} = @entry"
-
-      @title = "#{@entry.title} - #{@site.title}"
-
-      @bread_crumbs = BreadCrumb.new
-      @bread_crumbs.add(t.home, '/')
-      if @entry.category
-        @entry.category.ancestors.each do |cat|
-          @bread_crumbs.add(cat.name, cat.link)
-        end
-        @bread_crumbs.add(@entry.category.title, @entry.category.link)
-      end
-      @bread_crumbs.add(@entry.title, @entry.link)
-
-      render_detect type, :entry
+      
+      setup_and_render_entry
     end
 
     # comment
-    post %r{^/([0-9a-zA-Z-]+)$} do |id_or_slug|
+    post %r{^/([_/0-9a-zA-Z-]+)$} do |id_or_slug|
       @theme_types << :entry
 
       @entry = Entry.get_by_fuzzy_slug(id_or_slug)
@@ -674,5 +588,7 @@ module Lokka
       content_type 'text/css', :charset => 'utf-8'
       render_any path.to_sym
     end
+
+    run! if app_file == $0
   end
 end
