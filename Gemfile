@@ -3,10 +3,9 @@ source :rubygems
 gem 'bundler', '~> 1.0.7'
 gem 'rack', '1.3.5'
 gem 'rack-flash', '0.1.1'
-gem 'i18n', '0.5.0'
+gem 'i18n', '0.6.0'
 gem 'sinatra', '1.3.1'
 gem 'sinatra-contrib', '1.3.1', :require => false
-gem 'sinatra-r18n', '0.4.11'
 gem 'dm-core',          '1.2.0'
 gem 'dm-migrations',    '1.2.0'
 gem 'dm-timestamps',    '1.2.0'
@@ -29,6 +28,12 @@ gem 'nokogiri'
 gem 'tux'
 gem "heroku_backup_task", :git => "git://github.com/mataki/heroku_backup_task.git"
 gem 'padrino'
+gem 'padrino-helpers', '0.10.5'
+gem 'coderay'
+gem 'kramdown'
+gem 'RedCloth'
+gem 'wikicloth'
+gem 'yard-sinatra', '1.0.0'
 
 Dir["public/plugin/lokka-*/Gemfile"].each {|path| eval(open(path) {|f| f.read }) }
 

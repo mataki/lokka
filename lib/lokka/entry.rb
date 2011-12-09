@@ -8,6 +8,7 @@ class Entry
   property :slug, Slug, :length => 255
   property :title, String, :length => 255
   property :body, Text
+  property :markup, String, :length => 255
   property :type, Discriminator
   property :draft, Boolean, :default => false
   property :created_at, DateTime
@@ -27,6 +28,19 @@ class Entry
     self.category_id = nil if category_id === ''
   end
 
+  after :save, :update_fields
+
+  alias_method :raw_body, :body
+  def long_body
+    Markup.use_engine(markup, raw_body)
+  end
+  alias_method :body, :long_body
+
+  def short_body
+    @short_body ||= self.long_body \
+      .sub(/<!-- ?more ?-->.*/m, "<a href=\"#{link}\">#{I18n.t('continue_reading')}</a>")
+  end
+
   def comments
     @comment = Comment.all(:status => Comment::APPROVED, :entry_id => self.id)
   end
@@ -36,53 +50,6 @@ class Entry
     @tag_list = string.to_s.split(',').map { |name|
       name.force_encoding(Encoding.default_external).gsub(reg, '').strip
     }.reject{|x|x.blank?}.uniq.sort
-  end
-
-  class << self
-    def _default_scope
-      {:order => :created_at.desc}
-    end
-
-    def first_with_scope(limit, query = DataMapper::Undefined)
-      unless limit.kind_of? Integer
-        query = limit
-        limit = 1
-      end
-      query = _default_scope.update(query) if query.kind_of? Hash
-      query = _default_scope if query == DataMapper::Undefined
-      first_without_scope query
-    end
-    alias_method_chain :first, :scope
-
-    def all_with_scope(query = DataMapper::Undefined)
-      query = _default_scope.update(query) if query.kind_of? Hash
-      query = _default_scope if query == DataMapper::Undefined
-      all_without_scope query
-    end
-    alias_method_chain :all, :scope
-  end
-
-  def self.get_by_fuzzy_slug(str, query = {})
-    query = {:draft => false}.update(query)
-    ret = first({:slug => str}.update(query))
-    ret.blank? ? first({:id => str}.update(query)) : ret
-  end
-
-  def self.search(str)
-    all(:title.like => "%#{str}%") |
-      all(:body.like => "%#{str}%")
-  end
-
-  def self.recent(count = 5)
-    all(:limit => count)
-  end
-
-  def self.published
-    all(:draft => false)
-  end
-
-  def self.unpublished
-    all(:draft => true)
   end
 
   def fuzzy_slug
@@ -104,13 +71,113 @@ class Entry
     end
     html + '</ul>'
   end
+
+  # custom fields
+  def fields=(hash)
+    @fields = hash
+  end
+
+  def update_fields
+    return unless @field
+    @fields.each do |k, v|
+      self.send("#{k}=", v)
+    end
+  end
+
+  def method_missing(method, *args)
+    attribute = method.to_s
+    if attribute =~ /=$/
+      column = attribute[0, attribute.size - 1]
+      field_name = FieldName.first(:name => column)
+      field = Field.first(:entry_id => self.id, :field_name_id => field_name.id)
+      if field
+        field.value = args.first
+      else
+        field = Field.new(:entry_id => self.id, :field_name_id => field_name.id, :value => args.first)
+      end
+      field.save
+    else
+      field_name = FieldName.first(:name => attribute)
+      field = Field.first(:entry_id => self.id, :field_name_id => field_name.id)
+      field.try(:value)
+    end
+  end
+
+  class << self
+    def _default_scope
+      {:order => :created_at.desc}
+    end
+
+    def first_with_scope(limit = 1, query = DataMapper::Undefined)
+      unless limit.kind_of? Integer
+        query = limit
+        limit = 1
+      end
+      query = _default_scope.update(query) if query.kind_of? Hash
+      query = _default_scope if query == DataMapper::Undefined
+      first_without_scope query
+    end
+    alias_method_chain :first, :scope
+
+    def all_with_scope(query = DataMapper::Undefined)
+      query = _default_scope.update(query) if query.kind_of? Hash
+      query = _default_scope if query == DataMapper::Undefined
+      all_without_scope query
+    end
+    alias_method_chain :all, :scope
+
+    def get_by_fuzzy_slug(str, query = {})
+      query = {:draft => false}.update(query)
+      ret = first({:slug => str}.update(query))
+      ret.blank? ? first({:id => str}.update(query)) : ret
+    end
+  
+    def search(str)
+      all(:title.like => "%#{str}%") |
+        all(:body.like => "%#{str}%")
+    end
+  
+    def recent(count = 5)
+      all(:draft => false, :limit => count)
+    end
+  
+    def published
+      all(:draft => false)
+    end
+  
+    def unpublished
+      all(:draft => true)
+    end
+  end
 end
 
 def Entry(id_or_slug)
   Entry.get_by_fuzzy_slug(id_or_slug.to_s)
 end
 
-class Post < Entry; end
+class Post < Entry
+  alias orig_link link
+  def link
+    if Lokka::Helpers.custom_permalink?
+      Lokka::Helpers.custom_permalink_path({
+        :year     => self.created_at.year.to_s.rjust(4,'0'),
+        :monthnum => self.created_at.month.to_s.rjust(2,'0'),
+        :month    => self.created_at.month.to_s.rjust(2,'0'),
+        :day      => self.created_at.day.to_s.rjust(2,'0'),
+        :hour     => self.created_at.hour.to_s.rjust(2,'0'),
+        :minute   => self.created_at.min.to_s.rjust(2,'0'),
+        :second   => self.created_at.sec.to_s.rjust(2,'0'),
+        :post_id  => self.id.to_s,
+        :id       => self.id.to_s,
+        :slug     => self.slug || self.id.to_s,
+        :postname => self.slug || self.id.to_s,
+        :category => self.category ? (self.category.slug || self.category.id.to_s) : ""
+      })
+    else
+      orig_link
+    end
+  end
+end
 
 def Post(id_or_slug)
   Post.get_by_fuzzy_slug(id_or_slug.to_s)

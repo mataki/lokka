@@ -1,5 +1,5 @@
 require './init'
-require "heroku_backup_task/tasks"
+require 'yard'
 include Rake::DSL if defined? Rake::DSL
 
 task :default => ['spec:setup', 'db:delete', 'db:spec_seed', :spec]
@@ -27,7 +27,7 @@ end
 desc 'Reset database'
 task 'db:reset' => %w(db:delete db:seed)
 
-desc 'Set database'
+desc 'Set up database'
 task 'db:setup' => %w(db:migrate db:seed)
 
 desc 'Install gems'
@@ -38,6 +38,11 @@ end
 desc 'Install'
 task :install => %w(bundle db:setup)
 
+desc 'Generate documentation for Lokka'
+task :doc do
+  YARD::CLI::Yardoc.new.run
+end
+
 desc 'set ENV'
 task 'spec:setup' do
   ENV['RACK_ENV'] = ENV['LOKKA_ENV'] = 'test'
@@ -45,6 +50,7 @@ end
 
 desc 'Execute spec seed script'
 task 'db:spec_seed' do
+  puts Lokka.dsn
   DataMapper::Logger.new(STDOUT, :debug)
   DataMapper.logger.set_log STDERR, :debug, "SQL: ", true
   Lokka::Database.new.connect
@@ -60,4 +66,5 @@ begin
 rescue LoadError => e
 end
 
+require "heroku_backup_task/tasks"
 task :cron => :heroku_backup_and_store_s3
