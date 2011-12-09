@@ -27,7 +27,6 @@ gem 'activesupport', '3.1.1'
 gem 'nokogiri'
 gem 'tux'
 gem "heroku_backup_task", :git => "git://github.com/mataki/heroku_backup_task.git"
-gem 'padrino'
 gem 'padrino-helpers', '0.10.5'
 gem 'coderay'
 gem 'kramdown'
